@@ -19,7 +19,7 @@ def soccer_scraper(pla_url: str, ref_url: str, tea_url: str, man_url: str, sta_u
         curr_players = re.findall(r'\/player\/\d*\/([\w-]*)\/', res.text)
         players += list(curr_players)
     players = [p.lower().replace('-', ' ') for p in players]
-    players = set([f'{x.split()[0]} {x.split()[-1]}' if len(x) > 2 else x for x in players])
+    players = set([f'{x.split()[0]} {x.split()[-1]}' if len(x) > 2 else x.strip() for x in players])
 
     # scrape football referees
     for offset in tqdm(range(1), desc='Referees'):
@@ -34,22 +34,22 @@ def soccer_scraper(pla_url: str, ref_url: str, tea_url: str, man_url: str, sta_u
         res = requests.get(f'{tea_url}{offset}')
         curr_teams = re.findall(r'"(\/team\/\d+\/.+\/)"', res.text)
         teams += list(curr_teams)
-    teams = set(teams)
+    teams = set([x for x in teams])
     
     # scrape football managers
     for team in tqdm(teams, desc='Managers'):
         res = requests.get(f'{man_url}{team}')
         curr_managers = re.findall(r'"\/coach\/\d+\/(.+)\/"', res.text)
         managers += list(curr_managers)
-    managers = set(managers)
+    managers = set([m.lower().replace('-',' ').strip() for m in managers])
 
     # scrape football stadiums
     for offset in tqdm(range(1), desc='Stadiums'):
         stadiums = pd.read_html(sta_url)[2]['Stadium'].tolist()
-        stadiums = set([str(s).lower().replace('-', ' ').replace(' ♦', '') for s in stadiums])
+        stadiums = set([str(s).lower().replace('-', ' ').replace(' ♦', '').strip() for s in stadiums])
 
-    # clear teams name
-    teams = set([t.lower().split('/')[-2].replace('-', ' ') for t in teams])
+    # clear teams names
+    teams = set([t.lower().split('/')[-2].replace('-', ' ').replace('fc','').replace('cf','').strip() for t in teams])
 
     data = {
         'players': list(players),

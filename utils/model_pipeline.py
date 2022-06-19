@@ -10,6 +10,8 @@ from trax.supervised import training
 rnd.seed(33)
 
 def get_vocab(vocab_path, tags_path):
+    """ return dataset vocabulary and labels/tags map """
+
     vocab = {}
     with open(vocab_path) as f:
         for i, l in enumerate(f.read().splitlines()):
@@ -24,6 +26,8 @@ def get_vocab(vocab_path, tags_path):
     return vocab, tag_map
 
 def get_params(vocab, tag_map, sentences_file, labels_file):
+    """ return tokenized sentences, labels, and dataset length """
+
     sentences = []
     labels = []
 
@@ -39,6 +43,7 @@ def get_params(vocab, tag_map, sentences_file, labels_file):
             # replace each label by its index
             l = [tag_map[label] for label in sentence.split()] # I added plus 1 here
             labels.append(l) 
+            
     return sentences, labels, len(sentences)
 
 def data_generator(batch_size, x, y, pad, shuffle=False, verbose=False):
@@ -126,54 +131,41 @@ def data_generator(batch_size, x, y, pad, shuffle=False, verbose=False):
         yield((X,Y))
 
 def train_model(NER, train_generator, eval_generator, train_steps=1, output_dir='model'):
-    '''
-    Input: 
-        NER - the model you are building
-        train_generator - The data generator for training examples
-        eval_generator - The data generator for validation examples,
-        train_steps - number of training steps
-        output_dir - folder to save your model
-    Output:
-        training_loop - a trax supervised training Loop
-    '''
+    # create train callback
     train_task = training.TrainTask(
         train_generator, # A train data generator
         loss_layer = tl.CrossEntropyLoss(), # A cross-entropy loss function
         optimizer = trax.optimizers.Adam(0.01),  # The adam optimizer
     )
 
+    # create eval callback
     eval_task = training.EvalTask(
         labeled_data = eval_generator, # A labeled data generator
         metrics = [tl.CrossEntropyLoss(), tl.Accuracy()], # Evaluate with cross-entropy loss and accuracy
         n_eval_batches = 10  # Number of batches to use on each evaluation
     )
 
+    # create training loop
     training_loop = training.Loop(
         NER, # A model to train
         train_task, # A train task
         eval_tasks = [eval_task], # The evaluation task
         output_dir = output_dir) # The output directory
 
-    # Train with train_steps
+    # train the model
     training_loop.run(n_steps = train_steps)
     return training_loop
 
 def evaluate_prediction(pred, labels, pad):
-    """
-    Inputs:
-        pred: prediction array with shape 
-            (num examples, max sentence length in batch, num of classes)
-        labels: array of size (batch_size, seq_len)
-        pad: integer representing pad character
-    Outputs:
-        accuracy: float
-    """
+    # for each word get the label with the max value
     outputs = np.argmax(pred, axis=2)
     print("outputs shape:", outputs.shape)
 
+    # check difference between predicted and ground truth labels
     mask = labels != pad
     print("mask shape:", mask.shape, "mask[0][20:30]:", mask[0][20:30])
 
+    # get accuracy
     accuracy = np.sum(outputs == labels) / float(np.sum(mask))
 
     return accuracy
@@ -200,42 +192,48 @@ def predict(sentence, model, vocab, tag_map):
         pred.append(pred_label)
     return pred
 
-def model_pipeline(batch_size, train_steps, vocab_size, d_model):
+def model_pipeline(batch_size: int, train_steps: int):
+    """LSTM model pipeline"""
+
     vocab, tag_map = get_vocab('dataset/words.txt', 'dataset/tags.txt')
-    t_sentences, t_labels, t_size = get_params(vocab, tag_map, 'dataset/train/sentences.txt', 'dataset/train/labels.txt')
-    v_sentences, v_labels, v_size = get_params(vocab, tag_map, 'dataset/val/sentences.txt', 'dataset/val/labels.txt')
-    test_sentences, test_labels, test_size = get_params(vocab, tag_map, 'dataset/test/sentences.txt', 'dataset/test/labels.txt')
+    t_sentences, t_labels, _ = get_params(vocab, tag_map, 'dataset/train/sentences.txt', 'dataset/train/labels.txt')
+    v_sentences, v_labels, _ = get_params(vocab, tag_map, 'dataset/val/sentences.txt', 'dataset/val/labels.txt')
+    test_sentences, test_labels, _ = get_params(vocab, tag_map, 'dataset/test/sentences.txt', 'dataset/test/labels.txt')
 
-    vocab_size = len(vocab)
-    embedded_size = len(t_sentences[0])
-    tags = tag_map
+    # dataset usefull info
+    vocab_size = len(vocab) # dataset vocab
+    embedded_size = len(t_sentences[0]) # words/sentence
 
-    # initializing your model
+    # initializing the LSTM model
     model = tl.Serial(
         tl.Embedding(vocab_size, embedded_size), # Embedding layer
         tl.LSTM(embedded_size), # LSTM layer
-        tl.Dense(len(tags)), # Dense layer with len(tags) units
+        tl.Dense(len(tag_map)), # Dense layer with len(tag_map) units
         tl.LogSoftmax()  # LogSoftmax layer
     )
-    # display your model
-    print(model)
+    # display the model
+    # print(model)
 
+    # remove model path if it exists
     if os.path.exists('model'):
         shutil.rmtree('model')
 
-    # Create training data, mask pad id=35180 for training.
+    # Create training data generator
     train_generator = trax.data.inputs.add_loss_weights(
         data_generator(batch_size, t_sentences, t_labels, vocab['<PAD>'], True),
-        id_to_mask=vocab['<PAD>'])
+        id_to_mask=vocab['<PAD>']
+    )
 
-    # Create validation data, mask pad id=35180 for training.
+    # Create validation data generator
     eval_generator = trax.data.inputs.add_loss_weights(
         data_generator(batch_size, v_sentences, v_labels, vocab['<PAD>'], True),
-        id_to_mask=vocab['<PAD>'])
+        id_to_mask=vocab['<PAD>']
+    )
 
-    # Train the model
+    # initialize the training loop
     training_loop = train_model(model, train_generator, eval_generator, train_steps)
 
+    # load pretrained model
     """
     model = tl.Serial(
         tl.Embedding(vocab_size, embedded_size),    # Embedding layer
@@ -247,28 +245,42 @@ def model_pipeline(batch_size, train_steps, vocab_size, d_model):
     model.init_from_file('model/model.pkl.gz', weights_only=True)
     """
 
+    # test the model with evaluation data
+    eval_model_gen = data_generator(len(test_sentences), test_sentences, test_labels, vocab['<PAD>'])
+    x, y = next(eval_model_gen)
+    # print("input shapes", x.shape, y.shape)
+
+    # Evaluate modle accuracy
+    #print(f"accuracy: {evaluate_prediction(model(x), y, vocab['<PAD>'])}")
+
+    # test your own data
+    #txts = "already decided what we see here today is it enough for real madrid to stick with zinedine zidane for next year we don't know that i don't know and nobody knows other than the president but these are the performances that will keep him in a job nor matter what"
+    #txts_token = [vocab[token] if token in vocab else vocab['UNK'] for token in txts.split(' ')]
+    #eval_model_gen = data_generator(1, [txts_token], [[0 for _ in range(len(txts_token))]], vocab['<PAD>'])
+
     # create the evaluation inputs
-    x, y = next(data_generator(len(test_sentences), test_sentences, test_labels, vocab['<PAD>']))
-    print("input shapes", x.shape, y.shape)
+    x, y = next(eval_model_gen)
+    # print("input shapes", x.shape, y.shape, x[0])
 
     # sample prediction
     tmp_pred = model(x)
-    print(type(tmp_pred))
-    print(f"tmp_pred has shape: {tmp_pred.shape}")
+    # print(type(tmp_pred))
+    # print(f"tmp_pred has shape: {tmp_pred.shape}")
 
-    accuracy = evaluate_prediction(model(x), y, vocab['<PAD>'])
-    print("accuracy: ", accuracy)
-
-    sentence = """
-    Hello and welcome to the SANTIAGO BERNABEU that will be the stage for 
-    one of the most anticipated games of the season between REAL MADRID and 
-    BARCELONA. The referee for this match is Danny Makkelie.
-    """.lower().replace('\n', '')
-
-    s = [vocab[token] if token in vocab else vocab['UNK'] for token in sentence.split(' ')]
-    t = [token if token in vocab else 'UNK' for token in sentence.split(' ')]
-    predictions = predict(sentence, model, vocab, tag_map)
-    print([(word,token,token_word,tag) for (word,token,token_word,tag) in list(zip(sentence.split(' '), s, t, predictions)) if tag != 'O'])
+    print('\n')
+    x_aux = []
+    for idx, p in enumerate(x):
+        for t in p:
+            for k,v in vocab.items():
+                if v == t:
+                    x_aux.append(k)
+        preds = [(t,p1,p2,[q for q,w in tag_map.items() if w == p1][0],[q for q,w in tag_map.items() if w == p2][0]) for (t,p1,p2) in list(zip(x_aux, y[idx], np.argmax(tmp_pred, axis=2)[idx])) if p2 != 0]
+        
+        if preds: 
+            print(f'Preds: {preds}')
 
 if __name__ == "__main__":
-    model_pipeline(64, 100, None, None)
+    model_pipeline(
+        64, # data generator batch size
+        100, # model train steps
+    )

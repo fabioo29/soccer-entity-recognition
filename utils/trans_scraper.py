@@ -79,8 +79,8 @@ def trans_scraper(base_url: str, query: str, wait: int, dataset_len: int) -> Non
     
 if __name__ == "__main__":
     trans_scraper(
-        'https://www.youtube.com/results?search_query=',
-        'soccer+full',
-        20,
-        1000
+        'https://www.youtube.com/results?search_query=', # youtube serach url
+        'soccer+full',  # youtube search query
+        20, # time to wait for element
+        1000 # videos to scrape data from
     )
