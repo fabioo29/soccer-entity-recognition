@@ -1,6 +1,7 @@
 import os
 import random as rnd
 
+from argparse import ArgumentParser
 from utils.soccer_scraper import soccer_scraper
 from utils.process_data import process_data
 from utils.trans_scraper import trans_scraper
@@ -58,8 +59,25 @@ class SoccerNER:
 
 
 if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument('--run-all', action='store_true', help='run all steps')
+    parser.add_argument('--soccer-transcripts', action='store_true', help='run transcripts scraper')
+    parser.add_argument('--soccer-data', action='store_true', help='run soccer data scraper')
+    parser.add_argument('--process-data', action='store_true', help='run dataset processing step')
+    parser.add_argument('--train-model', action='store_true', help='create and train model step')
+    args = parser.parse_args()
+
     pipeline = SoccerNER()
-    #pipeline.run_trans_scraper(*pipeline.args_step1)
-    #pipeline.run_soccer_scraper(*pipeline.args_step2)
-    #pipeline.run_process_data(*pipeline.args_step3)
-    pipeline.run_train_model(*pipeline.args_step4)
+    if args.run_all:
+        pipeline.run_trans_scraper(*pipeline.args_step1)
+        pipeline.run_soccer_scraper(*pipeline.args_step2)
+        pipeline.run_process_data(*pipeline.args_step3)
+        pipeline.run_train_model(*pipeline.args_step4)
+    elif args.soccer_transcripts:
+        pipeline.run_trans_scraper(*pipeline.args_step1)
+    elif args.soccer_data:
+        pipeline.run_soccer_scraper(*pipeline.args_step2)
+    elif args.process_data:
+        pipeline.run_process_data(*pipeline.args_step3)
+    elif args.train_model:
+        pipeline.run_train_model(*pipeline.args_step4)
